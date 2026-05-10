@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 require('dotenv').config();
 
@@ -17,10 +17,19 @@ const client = new Client({
 
 const sendMsgCommand = new SlashCommandBuilder()
     .setName('send-msg')
-    .setDescription('إرسال رسالة + صور + منشن اختياري لرتبة')
+    .setDescription('إرسال رسالة + صور + منشن + إيمبد (كلها اختيارية)')
     .addChannelOption(opt =>
         opt.setName('channel')
            .setDescription('الروم الذي سيتم إرسال الرسالة إليه')
+           .setRequired(true)
+    )
+    .addStringOption(opt =>
+        opt.setName('type')
+           .setDescription('نوع الرسالة')
+           .addChoices(
+               { name: 'عادي', value: 'normal' },
+               { name: 'إيمبد', value: 'embed' }
+           )
            .setRequired(true)
     )
     .addStringOption(opt =>
@@ -83,12 +92,12 @@ client.on('interactionCreate', async interaction => {
         await interaction.deferReply({ ephemeral: true });
 
         const channel = interaction.options.getChannel('channel');
+        const type = interaction.options.getString('type');
         const text = interaction.options.getString('text') || '';
         const role = interaction.options.getRole('role');
 
         const files = [];
 
-        // التقاط 10 صور
         for (let i = 1; i <= 10; i++) {
             const img = interaction.options.getAttachment(`image${i}`);
             if (img) files.push(img);
@@ -98,20 +107,26 @@ client.on('interactionCreate', async interaction => {
             return interaction.editReply('❌ لازم ترسل نص أو صورة أو منشن.');
         }
 
-        let finalMessage = "";
+        let content = role ? `${role}` : null;
 
-        if (role) {
-            finalMessage += `${role}\n`;
+        if (type === 'normal') {
+            await channel.send({
+                content: content ? `${content}\n${text}` : text,
+                files: files
+            });
         }
 
-        if (text) {
-            finalMessage += text;
-        }
+        if (type === 'embed') {
+            const embed = new EmbedBuilder()
+                .setDescription(text || '')
+                .setColor('#00AEEF');
 
-        await channel.send({
-            content: finalMessage,
-            files: files
-        });
+            await channel.send({
+                content: content || null,
+                embeds: [embed],
+                files: files
+            });
+        }
 
         return interaction.editReply('✅ تم إرسال الرسالة بنجاح.');
     }
