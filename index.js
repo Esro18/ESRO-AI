@@ -1,12 +1,5 @@
-const { 
-    Client, 
-    GatewayIntentBits, 
-    AttachmentBuilder, 
-    SlashCommandBuilder, 
-    REST, 
-    Routes 
-} = require('discord.js');
-const fetch = require('node-fetch');
+const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 require('dotenv').config();
 
 const client = new Client({
@@ -14,123 +7,109 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent
-    ]
+    ],
+    partials: [Partials.Channel]
 });
 
-// =======================
-// دالة الترجمة
-// =======================
-async function translate(text, from, to) {
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    return data.responseData.translatedText;
+// =========================
+//  تعريف أمر /send-msg
+// =========================
+
+const sendMsgCommand = new SlashCommandBuilder()
+    .setName('send-msg')
+    .setDescription('إرسال رسالة + صور + منشن اختياري لرتبة')
+    .addChannelOption(opt =>
+        opt.setName('channel')
+           .setDescription('الروم الذي سيتم إرسال الرسالة إليه')
+           .setRequired(true)
+    )
+    .addStringOption(opt =>
+        opt.setName('text')
+           .setDescription('النص الذي سيتم إرساله')
+           .setRequired(false)
+    )
+    .addRoleOption(opt =>
+        opt.setName('role')
+           .setDescription('رتبة اختيارية لعمل منشن لها')
+           .setRequired(false)
+    );
+
+// إضافة 10 صور
+for (let i = 1; i <= 10; i++) {
+    sendMsgCommand.addAttachmentOption(opt =>
+        opt.setName(`image${i}`)
+           .setDescription(`صورة ${i}`)
+           .setRequired(false)
+    );
 }
 
-// =======================
-// أوامر السلاش
-// =======================
-const commands = [
-    new SlashCommandBuilder()
-        .setName('translate-ar-2')
-        .setDescription('ترجمة من إنجليزي إلى عربي')
-        .addStringOption(opt => 
-            opt.setName('text')
-               .setDescription('النص')
-               .setRequired(false)
-        ),
+const commands = [sendMsgCommand.toJSON()];
 
-    new SlashCommandBuilder()
-        .setName('translate-en-2')
-        .setDescription('ترجمة من عربي إلى إنجليزي')
-        .addStringOption(opt => 
-            opt.setName('text')
-               .setDescription('النص')
-               .setRequired(false)
-        ),
-
-    new SlashCommandBuilder()
-        .setName('send-msg')
-        .setDescription('إرسال رسالة وصور إلى روم محدد')
-        .addChannelOption(opt =>
-            opt.setName('channel')
-               .setDescription('الروم الذي سيتم إرسال الرسالة إليه')
-               .setRequired(true)
-        )
-        .addStringOption(opt =>
-            opt.setName('text')
-               .setDescription('النص الذي سيتم إرساله')
-               .setRequired(false)
-        )
-].map(cmd => cmd.toJSON());
+// =========================
+//  تسجيل الأوامر
+// =========================
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
-// =======================
-// تسجيل الأوامر
-// =======================
-client.once('ready', async () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+(async () => {
+    try {
+        console.log('⏳ جاري تسجيل الأوامر...');
+        await rest.put(
+            Routes.applicationCommands(process.env.CLIENT_ID),
+            { body: commands }
+        );
+        console.log('✅ تم تسجيل الأوامر بنجاح.');
+    } catch (error) {
+        console.error(error);
+    }
+})();
+
+// =========================
+//  تشغيل البوت
+// =========================
+
+client.on('ready', () => {
+    console.log(`🔥 Logged in as ${client.user.tag}`);
 });
 
-// =======================
-// تنفيذ الأوامر
-// =======================
+// =========================
+//  تنفيذ أمر /send-msg
+// =========================
+
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    await interaction.deferReply({ ephemeral: false });
-
-    const text = interaction.options.getString('text') || '';
-    let images = [];
-
-    // التقاط الصور من آخر رسالة
-    if (interaction.channel.lastMessage?.attachments) {
-        interaction.channel.lastMessage.attachments.forEach(att => {
-            if (images.length < 10) images.push(att.url);
-        });
-    }
-
-    // ============================
-    // أمر الترجمة
-    // ============================
-    if (interaction.commandName === 'translate-ar-2' || interaction.commandName === 'translate-en-2') {
-
-        if (!text && images.length === 0) {
-            return interaction.editReply('أرسل نص أو صور قبل استخدام الأمر.');
-        }
-
-        let translated;
-
-        if (interaction.commandName === 'translate-ar-2') {
-            translated = await translate(text, 'en', 'ar');
-        } else {
-            translated = await translate(text, 'ar', 'en');
-        }
-
-        const files = images.map(url => new AttachmentBuilder(url));
-
-        return interaction.editReply({
-            content: translated,
-            files: files
-        });
-    }
-
-    // ============================
-    // أمر إرسال رسالة لروم محدد
-    // ============================
     if (interaction.commandName === 'send-msg') {
-        const channel = interaction.options.getChannel('channel');
+        await interaction.deferReply({ ephemeral: true });
 
-        if (!text && images.length === 0) {
-            return interaction.editReply('أرسل نص أو صور قبل استخدام الأمر.');
+        const channel = interaction.options.getChannel('channel');
+        const text = interaction.options.getString('text') || '';
+        const role = interaction.options.getRole('role');
+
+        const files = [];
+
+        // التقاط 10 صور
+        for (let i = 1; i <= 10; i++) {
+            const img = interaction.options.getAttachment(`image${i}`);
+            if (img) files.push(img);
         }
 
-        const files = images.map(url => new AttachmentBuilder(url));
+        if (!text && files.length === 0 && !role) {
+            return interaction.editReply('❌ لازم ترسل نص أو صورة أو منشن.');
+        }
+
+        let finalMessage = "";
+
+        if (role) {
+            finalMessage += `${role}\n`;
+        }
+
+        if (text) {
+            finalMessage += text;
+        }
 
         await channel.send({
-            content: text,
+            content: finalMessage,
             files: files
         });
 
@@ -138,9 +117,6 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// =======================
-// تسجيل الدخول
-// =======================
 client.login(process.env.TOKEN);
 
 // =====================================================
